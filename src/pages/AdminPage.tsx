@@ -690,7 +690,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
     );
   };
 
-  const saveMatchThreshold = async () => {
+  const saveMatchThreshold = async (showAlert = true) => {
     if (!eventId) return;
 
     const normalized = Math.max(0, Math.min(100, Number(matchThreshold) || 0));
@@ -714,10 +714,15 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
           : prev,
       );
 
-      alert('マッチング閾値を更新しました。');
+      // スライダーの自動保存ではalertを表示しない
+      if (showAlert) {
+        alert('マッチング閾値を更新しました。');
+      }
     } catch (err) {
       console.error('Error saving match threshold:', err);
-      alert('マッチング閾値の保存に失敗しました。');
+      if (showAlert) {
+        alert('マッチング閾値の保存に失敗しました。');
+      }
     } finally {
       setIsSavingThreshold(false);
     }
@@ -906,9 +911,9 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                       onChange={e => {
                         const value = Number(e.target.value);
                         setMatchThreshold(value);
-                        // スライダーを動かしたら自動保存
+                        // スライダーを動かしたら自動保存（alertは表示しない）
                         setTimeout(() => {
-                          saveMatchThreshold();
+                          saveMatchThreshold(false);
                         }, 300); // 300ms後に自動保存（連続変更を防ぐ）
                       }}
                       className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
@@ -959,7 +964,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                       />
                       <span className="text-base font-medium text-gray-700">%</span>
                       <button
-                        onClick={saveMatchThreshold}
+                        onClick={() => saveMatchThreshold(true)}
                         disabled={isSavingThreshold}
                         className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors disabled:opacity-60 whitespace-nowrap"
                       >
@@ -983,7 +988,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                           onClick={() => {
                             setMatchThreshold(value);
                             setTimeout(() => {
-                              saveMatchThreshold();
+                              saveMatchThreshold(false); // クイック設定でもalertは表示しない
                             }, 100);
                           }}
                           className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -1074,8 +1079,8 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                   </>
                 )}
               </button>
-              </div>
             </div>
+          </div>
 
             <div className="space-y-3">
               <button
