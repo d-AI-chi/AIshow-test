@@ -25,12 +25,26 @@ GitHubにコードをプッシュすると、自動的にVercelでサイトが�
 
 GitHubリポジトリを接続すると、**自動的に自動デプロイが有効**になります。
 
-#### 確認方法
-1. Vercelダッシュボードでプロジェクトを開く
-2. 「Settings」→「Git」を確認
-3. 以下の設定を確認：
-   - **Production Branch**: `main` または `master`
-   - **Automatic deployments from Git**: 有効になっている
+#### 確認方法（詳しい手順）
+
+1. **Vercelダッシュボードにアクセス**
+   - https://vercel.com/dashboard にアクセス
+   - プロジェクト一覧から該当のプロジェクトをクリック
+
+2. **Settings（設定）を開く**
+   - プロジェクトページの上部メニューで「Settings」タブをクリック
+   - 左側のメニューから「Git」をクリック
+
+3. **Production Branchを確認**
+   - 「Git」ページの「Production Branch」セクションを確認
+   - 「Production Branch」のドロップダウンまたは表示で `main` になっているか確認
+   - もし `master` になっている場合は、ドロップダウンから `main` に変更できます
+
+4. **自動デプロイの有効化を確認**
+   - 同じページで「Automatic deployments from Git」が有効（ON）になっているか確認
+   - 無効になっている場合は、トグルスイッチをONにします
+
+**注意**: 画像に表示されている「Deploy Hooks」は別の機能です。自動デプロイの設定は「Git」タブで確認してください。
 
 ## 使い方
 
