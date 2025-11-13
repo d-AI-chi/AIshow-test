@@ -477,15 +477,23 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
                         type="range"
                         min="0.5"
                         max="3.0"
-                        step="0.1"
+                        step="0.05"
                         value={imageZoom}
                         onChange={(e) => setImageZoom(Number(e.target.value))}
-                        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                        className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-rose-500 touch-pan-y"
+                        style={{
+                          background: `linear-gradient(to right, #f43f5e 0%, #f43f5e ${((imageZoom - 0.5) / 2.5) * 100}%, #e5e7eb ${((imageZoom - 0.5) / 2.5) * 100}%, #e5e7eb 100%)`
+                        }}
                       />
-                      <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>縮小</span>
-                        <span>拡大</span>
+                      <div className="flex justify-between text-xs text-gray-500 mt-2">
+                        <span>50%</span>
+                        <span>100%</span>
+                        <span>200%</span>
+                        <span>300%</span>
                       </div>
+                      <p className="text-xs text-gray-400 text-center mt-2">
+                        💡 スライダーを動かすか、画像を2本指でピンチしてズームできます
+                      </p>
                     </div>
                   </div>
                   <div className="flex gap-3 justify-center">

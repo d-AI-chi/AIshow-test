@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Trash2, Eye, EyeOff, Users, Calculator, ChevronDown, ChevronUp, Heart, FileText, Edit2, Save, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
@@ -58,6 +58,8 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
   const [matchPairs, setMatchPairs] = useState<MatchPair[]>([]);
   const [matchThreshold, setMatchThreshold] = useState(85);
   const [isSavingThreshold, setIsSavingThreshold] = useState(false);
+  const lastSavedThresholdRef = useRef<number | null>(null);
+  const saveTimestampRef = useRef<number>(0);
   const [adminCode, setAdminCode] = useState('');
   const [isSavingAdminCode, setIsSavingAdminCode] = useState(false);
   const [isRefreshingData, setIsRefreshingData] = useState(false);
@@ -90,7 +92,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
       return () => clearInterval(interval);
   }, [eventId]);
 
-  const fetchEventDetails = async (targetEventId: string) => {
+  const fetchEventDetails = async (targetEventId: string, skipThresholdUpdate = false) => {
     const { data, error } = await supabase
       .from('events')
       .select('*')
@@ -108,11 +110,19 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
     setEventName(event.name ?? '');
     setResultsVisible(event.results_visible ?? false);
 
-    const thresholdValue =
-      typeof event.match_threshold === 'number'
-        ? Math.max(0, Math.min(100, Number(event.match_threshold)))
-        : 85;
-    setMatchThreshold(thresholdValue);
+    // 閾値の保存中でない場合、かつ保存直後（3秒以内）でない場合のみ更新
+    const now = Date.now();
+    const isRecentlySaved = now - saveTimestampRef.current < 3000; // 3秒以内
+    if (!skipThresholdUpdate && !isSavingThreshold && !isRecentlySaved) {
+      const thresholdValue =
+        typeof event.match_threshold === 'number'
+          ? Math.max(0, Math.min(100, Number(event.match_threshold)))
+          : 85;
+      // 保存した値と異なる場合のみ更新（保存直後のリセットを防ぐ）
+      if (lastSavedThresholdRef.current === null || lastSavedThresholdRef.current !== thresholdValue) {
+        setMatchThreshold(thresholdValue);
+      }
+    }
     setAdminCode(event.admin_code ?? '');
   };
 
@@ -706,6 +716,8 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
 
       // 保存が成功したら、activeEventも更新（fetchEventDetailsを呼ばない）
       setMatchThreshold(normalized);
+      lastSavedThresholdRef.current = normalized;
+      saveTimestampRef.current = Date.now();
       setActiveEvent(prev =>
         prev
           ? {
