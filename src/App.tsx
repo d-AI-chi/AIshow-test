@@ -4,8 +4,9 @@ import { SurveyPage } from './pages/SurveyPage';
 import { WaitingPage } from './pages/WaitingPage';
 import { ResultsPage } from './pages/ResultsPage';
 import { AdminPage } from './pages/AdminPage';
+import { DisplayPage } from './pages/DisplayPage';
 
-type AppState = 'landing' | 'survey' | 'waiting' | 'results' | 'admin';
+type AppState = 'landing' | 'survey' | 'waiting' | 'results' | 'admin' | 'display';
 
 function App() {
   const [state, setState] = useState<AppState>('landing');
@@ -16,13 +17,46 @@ function App() {
     const path = window.location.pathname;
     if (path === '/admin') {
       setState('admin');
+    } else if (path.startsWith('/display/')) {
+      const eventIdFromPath = path.split('/display/')[1];
+      if (eventIdFromPath) {
+        setEventId(eventIdFromPath);
+        setState('display');
+      }
     }
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      if (path === '/admin') {
+        setState('admin');
+      } else if (path.startsWith('/display/')) {
+        const eventIdFromPath = path.split('/display/')[1];
+        if (eventIdFromPath) {
+          setEventId(eventIdFromPath);
+          setState('display');
+        }
+      } else if (state === 'admin' || state === 'display') {
+        setState('landing');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [state]);
 
   const handleJoinEvent = (newEventId: string, newParticipantId: string) => {
     setEventId(newEventId);
     setParticipantId(newParticipantId);
     setState('survey');
+  };
+
+  const handleOpenAdmin = () => {
+    setState('admin');
+    if (window.location.pathname !== '/admin') {
+      window.history.pushState(null, '', '/admin');
+    }
   };
 
   const handleSurveyComplete = () => {
@@ -38,7 +72,7 @@ function App() {
   }
 
   if (state === 'landing') {
-    return <LandingPage onJoinEvent={handleJoinEvent} />;
+    return <LandingPage onJoinEvent={handleJoinEvent} onOpenAdmin={handleOpenAdmin} />;
   }
 
   if (state === 'survey' && eventId && participantId) {
@@ -59,7 +93,11 @@ function App() {
     return <ResultsPage participantId={participantId} />;
   }
 
-  return <LandingPage onJoinEvent={handleJoinEvent} />;
+  if (state === 'display' && eventId) {
+    return <DisplayPage eventId={eventId} />;
+  }
+
+  return <LandingPage onJoinEvent={handleJoinEvent} onOpenAdmin={handleOpenAdmin} />;
 }
 
 export default App;

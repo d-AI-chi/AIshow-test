@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Heart, Sparkles, Trophy, Loader2 } from 'lucide-react';
+import { Heart, Sparkles, Trophy, Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface Match {
@@ -17,28 +17,148 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
   const [matches, setMatches] = useState<Match[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [participantName, setParticipantName] = useState('');
+  const [participantImage, setParticipantImage] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    loadResults();
-  }, [participantId]);
-
-  const loadResults = async () => {
-    try {
+    let eventId: string | null = null;
+    
+    const setupAndLoad = async () => {
+      // 初回読み込み
+      await loadResults();
+      
+      // 参加者のevent_idを取得
       const { data: participant } = await supabase
         .from('participants')
-        .select('name')
+        .select('event_id')
         .eq('id', participantId)
         .single();
 
-      if (participant) {
-        setParticipantName(participant.name);
+      if (!participant?.event_id) return;
+      eventId = participant.event_id;
+
+      // Supabase Realtimeでeventsテーブルのresults_visible変更を監視
+      const eventsSubscription = supabase
+        .channel(`events-${eventId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'events',
+            filter: `id=eq.${eventId}`,
+          },
+          (payload) => {
+            // results_visibleがtrueになったときのみ再読み込み
+            if (payload.new.results_visible) {
+              loadResults(false); // ローディング表示なしで更新
+            }
+          }
+        )
+        .subscribe();
+
+      // match_resultsテーブルの変更も監視（is_hiddenの変更など）
+      const matchResultsSubscription = supabase
+        .channel(`match-results-${participantId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'match_results',
+            filter: `participant_id=eq.${participantId}`,
+          },
+          () => {
+            // マッチ結果が更新されたときのみ再読み込み（ローディング表示なし）
+            loadResults(false);
+          }
+        )
+        .subscribe();
+
+      // 定期的にresults_visibleをチェック（Realtimeが動作しない場合のフォールバック）
+      const checkInterval = setInterval(async () => {
+        if (!eventId) return;
+        const { data: event } = await supabase
+          .from('events')
+          .select('results_visible')
+          .eq('id', eventId)
+          .single();
+        
+        if (event?.results_visible) {
+          loadResults(false);
+        }
+      }, 3000);
+
+      return () => {
+        eventsSubscription.unsubscribe();
+        matchResultsSubscription.unsubscribe();
+        clearInterval(checkInterval);
+      };
+    };
+
+    let cleanup: (() => void) | undefined;
+    setupAndLoad().then(cleanupFn => {
+      cleanup = cleanupFn;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [participantId]);
+
+  const loadResults = async (showLoading = true) => {
+    try {
+      setError('');
+      if (showLoading) {
+        setIsLoading(true);
+      }
+      
+      const { data: participant, error: participantError } = await supabase
+        .from('participants')
+        .select('name, profile_image_url, event_id')
+        .eq('id', participantId)
+        .single();
+
+      if (participantError) {
+        console.error('Participant error:', participantError);
+        setError('参加者情報の取得に失敗しました。');
+        if (showLoading) {
+          setIsLoading(false);
+        }
+        return;
       }
 
-      const { data: matchResults, error } = await supabase
+      if (!participant) {
+        setError('参加者情報が見つかりませんでした。');
+        if (showLoading) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      setParticipantName(participant.name);
+      setParticipantImage(participant.profile_image_url);
+
+      // イベントの閾値を取得
+      let matchThreshold = 85; // デフォルト値
+      if (participant.event_id) {
+        const { data: event, error: eventError } = await supabase
+          .from('events')
+          .select('match_threshold')
+          .eq('id', participant.event_id)
+          .maybeSingle();
+        
+        if (!eventError && event?.match_threshold !== null && event?.match_threshold !== undefined) {
+          matchThreshold = Number(event.match_threshold);
+        }
+      }
+
+      const { data: matchResults, error: matchError } = await supabase
         .from('match_results')
         .select(`
           id,
           compatibility_score,
+          is_hidden,
           matched_participant:matched_participant_id (
             id,
             name,
@@ -46,21 +166,49 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
           )
         `)
         .eq('participant_id', participantId)
-        .order('compatibility_score', { ascending: false })
-        .limit(3);
+        .order('compatibility_score', { ascending: false });
 
-      if (error) throw error;
+      if (matchError) {
+        console.error('Match results error:', matchError);
+        if (matchError.code === 'PGRST116' || matchError.message.includes('permission') || matchError.message.includes('row-level')) {
+          setError('結果はまだ公開されていません。しばらくお待ちください。');
+        } else {
+          setError(`結果の取得に失敗しました: ${matchError.message}`);
+        }
+        if (showLoading) {
+          setIsLoading(false);
+        }
+        return;
+      }
 
-      const formattedMatches = matchResults.map((result: any) => ({
-        id: result.matched_participant.id,
-        name: result.matched_participant.name,
-        compatibility_score: result.compatibility_score,
-        profile_image_url: result.matched_participant.profile_image_url,
-      }));
+      if (!matchResults || matchResults.length === 0) {
+        setError('まだ結果が計算されていません。しばらくお待ちください。');
+        if (showLoading) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      // 閾値以上のペアのみをフィルタリング（is_hiddenが明示的にfalseのもののみ）
+      const formattedMatches = matchResults
+        .filter((result: any) => 
+          result.matched_participant && 
+          result.is_hidden === false &&
+          Number(result.compatibility_score) >= matchThreshold
+        )
+        .map((result: any) => ({
+          id: result.matched_participant.id,
+          name: result.matched_participant.name,
+          compatibility_score: result.compatibility_score,
+          profile_image_url: result.matched_participant.profile_image_url,
+        }))
+        .slice(0, 3);
 
       setMatches(formattedMatches);
-    } catch (err) {
+      setError(''); // 成功時はエラーをクリア
+    } catch (err: any) {
       console.error('Error loading results:', err);
+      setError(`結果の読み込みに失敗しました: ${err?.message || '不明なエラー'}`);
     } finally {
       setIsLoading(false);
     }
@@ -76,95 +224,130 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-red-50 py-8 px-4">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full mb-4 shadow-lg animate-bounce">
             <Trophy className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">
-            診断結果
-          </h1>
-          <p className="text-gray-600">
-            {participantName}さんと相性の良い方々
-          </p>
+          <div className="mb-2">
+            <p className="text-xs sm:text-sm font-bold text-rose-500 mb-1 tracking-wider animate-pulse">
+              あいしょうしんだん
+            </p>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 mb-1">
+              AI-Show 診断
+            </h1>
+            <p className="text-sm sm:text-base md:text-lg text-gray-600 font-medium mb-2">
+              〜最も価値観が似ているペアは？〜
+            </p>
+            <p className="text-sm sm:text-base text-gray-600 px-2">
+              {participantName}さんにぴったりのペアが見つかりました！
+            </p>
+          </div>
         </div>
 
-        {matches.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-            <p className="text-gray-600">
-              まだ結果が計算されていません。しばらくお待ちください。
+        {error ? (
+          <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8 text-center">
+            <p className="text-sm sm:text-base text-gray-600">{error}</p>
+          </div>
+        ) : matches.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8 text-center">
+            <Loader2 className="w-6 h-6 sm:w-8 sm:h-8 text-rose-500 animate-spin mx-auto mb-4" />
+            <p className="text-sm sm:text-base text-gray-600">
+              結果を読み込み中です...
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 sm:space-y-6">
             {matches.map((match, index) => (
               <div
                 key={match.id}
-                className="bg-white rounded-2xl shadow-xl p-6 hover:shadow-2xl transition-shadow"
+                className="bg-white rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-6 md:p-8 hover:shadow-2xl sm:hover:shadow-3xl transition-all"
               >
-                <div className="flex items-center gap-6">
-                  <div className="relative flex-shrink-0">
-                    {match.profile_image_url ? (
-                      <>
-                        <img
-                          src={match.profile_image_url}
-                          alt={match.name}
-                          className="w-24 h-24 rounded-full object-cover shadow-lg"
-                        />
-                        {index === 0 && (
-                          <div className="absolute -top-2 -right-2">
-                            <Sparkles className="w-8 h-8 text-amber-500 fill-current" />
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {index === 0 ? (
-                          <>
-                            <div className="w-24 h-24 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg">
-                              <span className="text-4xl font-bold text-white">
-                                {match.name.charAt(0)}
-                              </span>
-                            </div>
-                            <div className="absolute -top-2 -right-2">
-                              <Sparkles className="w-8 h-8 text-amber-500 fill-current" />
-                            </div>
-                          </>
-                        ) : (
-                          <div className="w-24 h-24 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
-                            <span className="text-4xl font-bold text-white">
-                              {match.name.charAt(0)}
-                            </span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div className="absolute -bottom-1 -left-1 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-md">
-                      <span className="text-sm font-bold text-gray-700">{index + 1}</span>
+                {index === 0 && (
+                  <div className="text-center mb-4 sm:mb-6">
+                    <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full text-xs sm:text-sm font-bold mb-3 sm:mb-4">
+                      <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <span>ペア成立！</span>
                     </div>
                   </div>
+                )}
 
-                  <div className="flex-1">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-2">
-                      {match.name}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <Heart className="w-5 h-5 text-rose-500 fill-current" />
-                      <span className="text-gray-600">相性度</span>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 md:gap-8">
+                  {/* 自分のプロフィール */}
+                  <div className="flex flex-col items-center">
+                    <div className="relative">
+                      {participantImage ? (
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                          <img
+                            src={participantImage}
+                            alt={participantName}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                          <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-white">
+                            {participantName.charAt(0)}
+                          </span>
+                        </div>
+                      )}
+                      {index === 0 && (
+                        <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
+                          <Sparkles className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-amber-500 fill-current animate-pulse" />
+                        </div>
+                      )}
                     </div>
+                    <p className="mt-2 sm:mt-3 text-base sm:text-lg font-bold text-gray-800 text-center px-2">{participantName}</p>
                   </div>
 
-                  <div className="flex-shrink-0 text-center">
-                    <div className="text-5xl font-bold bg-gradient-to-br from-rose-500 to-pink-600 bg-clip-text text-transparent">
-                      {Math.round(match.compatibility_score)}%
+                  {/* ハートアイコン */}
+                  <div className="flex flex-col items-center">
+                    <div className="relative">
+                      <Heart className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-rose-500 fill-current animate-pulse" />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-lg sm:text-xl md:text-2xl font-bold text-white drop-shadow-lg">
+                          {Math.round(match.compatibility_score)}%
+                        </span>
+                      </div>
                     </div>
+                    <p className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 font-medium">相性度</p>
+                  </div>
+
+                  {/* マッチした相手のプロフィール */}
+                  <div className="flex flex-col items-center">
+                    <div className="relative">
+                      {match.profile_image_url ? (
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                          <img
+                            src={match.profile_image_url}
+                            alt={match.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                          <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-white">
+                            {match.name.charAt(0)}
+                          </span>
+                        </div>
+                      )}
+                      {index === 0 && (
+                        <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
+                          <Sparkles className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-amber-500 fill-current animate-pulse" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="mt-2 sm:mt-3 text-base sm:text-lg font-bold text-gray-800 text-center px-2">{match.name}</p>
                   </div>
                 </div>
 
                 {index === 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <p className="text-center text-sm text-gray-600">
-                      最高の相性です！ぜひお話ししてみてください
+                  <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200 text-center">
+                    <p className="text-base sm:text-lg font-semibold text-rose-600 mb-1 sm:mb-2">
+                      🎉 最高の相性です！ 🎉
+                    </p>
+                    <p className="text-xs sm:text-sm text-gray-600">
+                      ぜひお話ししてみてください
                     </p>
                   </div>
                 )}
@@ -173,11 +356,11 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
           </div>
         )}
 
-        <div className="mt-8 bg-white rounded-2xl shadow-xl p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-3">
+        <div className="mt-6 sm:mt-8 bg-white rounded-2xl shadow-xl p-4 sm:p-6">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-800 mb-2 sm:mb-3">
             診断について
           </h2>
-          <p className="text-gray-600 text-sm leading-relaxed">
+          <p className="text-gray-600 text-xs sm:text-sm leading-relaxed">
             この診断結果は、アンケートの回答を基に計算されています。
             相性の良い方々と楽しく交流してください。
           </p>

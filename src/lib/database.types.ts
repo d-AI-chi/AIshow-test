@@ -17,7 +17,9 @@ export interface Database {
           is_active: boolean
           results_visible: boolean
           created_at: string
+          match_threshold: number | null
           ends_at: string
+          admin_code: string | null
         }
         Insert: {
           id?: string
@@ -27,6 +29,7 @@ export interface Database {
           results_visible?: boolean
           created_at?: string
           ends_at: string
+          admin_code?: string | null
         }
         Update: {
           id?: string
@@ -36,6 +39,8 @@ export interface Database {
           results_visible?: boolean
           created_at?: string
           ends_at?: string
+          match_threshold?: number | null
+          admin_code?: string | null
         }
       }
       questions: {
@@ -71,6 +76,7 @@ export interface Database {
           name: string
           profile_image_url: string | null
           created_at: string
+          gender: string | null
         }
         Insert: {
           id?: string
@@ -78,6 +84,7 @@ export interface Database {
           name: string
           profile_image_url?: string | null
           created_at?: string
+          gender?: string | null
         }
         Update: {
           id?: string
@@ -85,6 +92,7 @@ export interface Database {
           name?: string
           profile_image_url?: string | null
           created_at?: string
+          gender?: string | null
         }
       }
       answers: {
@@ -118,6 +126,7 @@ export interface Database {
           matched_participant_id: string
           compatibility_score: number
           calculated_at: string
+          is_hidden: boolean
         }
         Insert: {
           id?: string
@@ -126,6 +135,7 @@ export interface Database {
           matched_participant_id: string
           compatibility_score: number
           calculated_at?: string
+          is_hidden?: boolean
         }
         Update: {
           id?: string
@@ -134,8 +144,21 @@ export interface Database {
           matched_participant_id?: string
           compatibility_score?: number
           calculated_at?: string
+          is_hidden?: boolean
         }
       }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
     }
   }
 }
