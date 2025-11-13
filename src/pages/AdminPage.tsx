@@ -890,57 +890,113 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                 <p className="text-xs sm:text-sm text-gray-600 mt-1">
                   この値以上のペアを「成立」とみなして表示します。
                 </p>
-                <div className="mt-4 space-y-3">
-                  <div className="flex items-center gap-3">
+                <div className="mt-4 space-y-4">
+                  {/* スライダー */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-600">閾値: {matchThreshold}%</span>
+                      <span className="text-xs text-gray-500">0% - 100%</span>
+                    </div>
                     <input
-                      type="text"
-                      inputMode="numeric"
-                      value={matchThreshold === 0 ? '' : matchThreshold.toString()}
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={matchThreshold}
                       onChange={e => {
-                        const inputValue = e.target.value.trim();
-                        if (inputValue === '') {
-                          setMatchThreshold(0);
-                          return;
-                        }
-                        // 数字のみを許可
-                        const numericValue = inputValue.replace(/[^0-9.]/g, '');
-                        if (numericValue !== inputValue) {
-                          // 数字以外が含まれている場合は無視
-                          return;
-                        }
-                        const value = parseFloat(numericValue);
-                        if (!Number.isNaN(value)) {
-                          const clampedValue = Math.max(0, Math.min(100, value));
-                          setMatchThreshold(clampedValue);
-                        }
-                      }}
-                      onBlur={() => {
-                        // フォーカスが外れたときに0の場合は85に戻す
-                        if (matchThreshold === 0) {
-                          setMatchThreshold(85);
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        const value = Number(e.target.value);
+                        setMatchThreshold(value);
+                        // スライダーを動かしたら自動保存
+                        setTimeout(() => {
                           saveMatchThreshold();
-                          e.currentTarget.blur();
-                        }
+                        }, 300); // 300ms後に自動保存（連続変更を防ぐ）
                       }}
-                      className="w-32 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base font-medium"
-                      placeholder="0-100"
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      style={{
+                        background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${matchThreshold}%, #e5e7eb ${matchThreshold}%, #e5e7eb 100%)`
+                      }}
                     />
-                    <span className="text-base font-medium text-gray-700">%</span>
-                    <button
-                      onClick={saveMatchThreshold}
-                      disabled={isSavingThreshold}
-                      className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors disabled:opacity-60"
-                    >
-                      {isSavingThreshold ? '保存中...' : '保存'}
-                    </button>
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>0</span>
+                      <span>25</span>
+                      <span>50</span>
+                      <span>75</span>
+                      <span>100</span>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500">
-                    💡 直接数字を入力してEnterキーで保存できます（0-100の範囲）
-                  </p>
+
+                  {/* 直接入力 */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      直接入力（0-100）
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={matchThreshold}
+                        onChange={e => {
+                          const value = Number(e.target.value);
+                          if (!Number.isNaN(value)) {
+                            const clampedValue = Math.max(0, Math.min(100, value));
+                            setMatchThreshold(clampedValue);
+                          }
+                        }}
+                        onBlur={() => {
+                          // フォーカスが外れたときに自動保存
+                          saveMatchThreshold();
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            saveMatchThreshold();
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base font-medium"
+                        placeholder="0-100"
+                      />
+                      <span className="text-base font-medium text-gray-700">%</span>
+                      <button
+                        onClick={saveMatchThreshold}
+                        disabled={isSavingThreshold}
+                        className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors disabled:opacity-60 whitespace-nowrap"
+                      >
+                        {isSavingThreshold ? '保存中...' : '保存'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 スライダーを動かすと自動保存されます。直接入力の場合はEnterキーまたは保存ボタンで保存できます。
+                    </p>
+                  </div>
+
+                  {/* クイック設定ボタン */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      よく使う設定
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[70, 75, 80, 85, 90, 95, 100].map(value => (
+                        <button
+                          key={value}
+                          onClick={() => {
+                            setMatchThreshold(value);
+                            setTimeout(() => {
+                              saveMatchThreshold();
+                            }, 100);
+                          }}
+                          className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            matchThreshold === value
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {value}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
