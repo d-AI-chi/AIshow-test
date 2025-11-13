@@ -786,7 +786,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                 </div>
                 <div>
                   <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
-                    管理者用リンク（携帯用）
+                    管理者用リンク
                   </label>
                   <div className="flex gap-2">
                     <input

@@ -44,21 +44,22 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleStart = (clientX: number, clientY: number) => {
     if (!isEditingImage) return;
     setIsDragging(true);
     setDragStart({
-      x: e.clientX - imagePosition.x,
-      y: e.clientY - imagePosition.y,
+      x: clientX - imagePosition.x,
+      y: clientY - imagePosition.y,
     });
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMove = (clientX: number, clientY: number) => {
     if (!isDragging || !isEditingImage || !containerRef.current) return;
-    const maxOffset = 150;
+    const containerSize = containerRef.current.offsetWidth;
+    const maxOffset = containerSize * 0.5; // コンテナサイズに応じて調整
 
-    const newX = e.clientX - dragStart.x;
-    const newY = e.clientY - dragStart.y;
+    const newX = clientX - dragStart.x;
+    const newY = clientY - dragStart.y;
 
     setImagePosition({
       x: Math.max(-maxOffset, Math.min(maxOffset, newX)),
@@ -66,8 +67,40 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
     });
   };
 
-  const handleMouseUp = () => {
+  const handleEnd = () => {
     setIsDragging(false);
+  };
+
+  // マウスイベント
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    handleStart(e.clientX, e.clientY);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    e.preventDefault();
+    handleMove(e.clientX, e.clientY);
+  };
+
+  const handleMouseUp = () => {
+    handleEnd();
+  };
+
+  // タッチイベント（携帯対応）
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    handleStart(touch.clientX, touch.clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    handleMove(touch.clientX, touch.clientY);
+  };
+
+  const handleTouchEnd = () => {
+    handleEnd();
   };
 
   const handleConfirmImage = async () => {
@@ -369,12 +402,15 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
                     </p>
                     <div 
                       ref={containerRef}
-                      className="relative mx-auto bg-white rounded-full shadow-2xl cursor-move" 
+                      className="relative mx-auto bg-white rounded-full shadow-2xl cursor-move touch-none" 
                       style={{ width: 'min(300px, 80vw)', height: 'min(300px, 80vw)' }}
                       onMouseDown={handleMouseDown}
                       onMouseMove={handleMouseMove}
                       onMouseUp={handleMouseUp}
                       onMouseLeave={handleMouseUp}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
                     >
                       <div className="absolute inset-0 rounded-full overflow-hidden border-4 border-rose-500 shadow-inner">
                         <img

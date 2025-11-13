@@ -272,12 +272,12 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
                   </div>
                 )}
 
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 md:gap-8">
+                <div className="flex flex-row items-center justify-center gap-2 sm:gap-4 md:gap-6 lg:gap-8">
                   {/* 自分のプロフィール */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center flex-shrink-0">
                     <div className="relative">
                       {participantImage ? (
-                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 rounded-full overflow-hidden border-4 border-rose-500 shadow-lg sm:shadow-xl">
                           <img
                             src={participantImage}
                             alt={participantName}
@@ -285,39 +285,39 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
                           />
                         </div>
                       ) : (
-                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
-                          <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-white">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                          <span className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white">
                             {participantName.charAt(0)}
                           </span>
                         </div>
                       )}
                       {index === 0 && (
                         <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
-                          <Sparkles className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-amber-500 fill-current animate-pulse" />
+                          <Sparkles className="w-4 h-4 sm:w-6 sm:h-6 md:w-8 md:h-8 lg:w-10 lg:h-10 text-amber-500 fill-current animate-pulse" />
                         </div>
                       )}
                     </div>
-                    <p className="mt-2 sm:mt-3 text-base sm:text-lg font-bold text-gray-800 text-center px-2">{participantName}</p>
+                    <p className="mt-1 sm:mt-2 text-xs sm:text-sm md:text-base lg:text-lg font-bold text-gray-800 text-center px-1 sm:px-2 truncate max-w-[80px] sm:max-w-[100px] md:max-w-[120px]">{participantName}</p>
                   </div>
 
                   {/* ハートアイコン */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center flex-shrink-0">
                     <div className="relative">
-                      <Heart className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-rose-500 fill-current animate-pulse" />
+                      <Heart className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 lg:w-14 lg:h-14 text-rose-500 fill-current animate-pulse" />
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-lg sm:text-xl md:text-2xl font-bold text-white drop-shadow-lg">
+                        <span className="text-xs sm:text-sm md:text-base lg:text-lg font-bold text-white drop-shadow-lg">
                           {Math.round(match.compatibility_score)}%
                         </span>
                       </div>
                     </div>
-                    <p className="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 font-medium">相性度</p>
+                    <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs md:text-sm text-gray-600 font-medium">相性度</p>
                   </div>
 
                   {/* マッチした相手のプロフィール */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center flex-shrink-0">
                     <div className="relative">
                       {match.profile_image_url ? (
-                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 rounded-full overflow-hidden border-4 border-rose-500 shadow-lg sm:shadow-xl">
                           <img
                             src={match.profile_image_url}
                             alt={match.name}
@@ -325,19 +325,19 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
                           />
                         </div>
                       ) : (
-                        <div className="w-24 h-24 sm:w-28 sm:h-28 md:w-32 md:h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
-                          <span className="text-3xl sm:text-4xl md:text-5xl font-bold text-white">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
+                          <span className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white">
                             {match.name.charAt(0)}
                           </span>
                         </div>
                       )}
                       {index === 0 && (
                         <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
-                          <Sparkles className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-amber-500 fill-current animate-pulse" />
+                          <Sparkles className="w-4 h-4 sm:w-6 sm:h-6 md:w-8 md:h-8 lg:w-10 lg:h-10 text-amber-500 fill-current animate-pulse" />
                         </div>
                       )}
                     </div>
-                    <p className="mt-2 sm:mt-3 text-base sm:text-lg font-bold text-gray-800 text-center px-2">{match.name}</p>
+                    <p className="mt-1 sm:mt-2 text-xs sm:text-sm md:text-base lg:text-lg font-bold text-gray-800 text-center px-1 sm:px-2 truncate max-w-[80px] sm:max-w-[100px] md:max-w-[120px]">{match.name}</p>
                   </div>
                 </div>
 
