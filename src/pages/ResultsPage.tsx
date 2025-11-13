@@ -136,7 +136,7 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
         return;
       }
 
-      setParticipantName(participant.name);
+        setParticipantName(participant.name);
       setParticipantImage(participant.profile_image_url);
 
       // イベントの閾値を取得
@@ -197,10 +197,10 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
           Number(result.compatibility_score) >= matchThreshold
         )
         .map((result: any) => ({
-          id: result.matched_participant.id,
-          name: result.matched_participant.name,
-          compatibility_score: result.compatibility_score,
-          profile_image_url: result.matched_participant.profile_image_url,
+        id: result.matched_participant.id,
+        name: result.matched_participant.name,
+        compatibility_score: result.compatibility_score,
+        profile_image_url: result.matched_participant.profile_image_url,
         }))
         .slice(0, 3);
 
@@ -235,13 +235,13 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
             </p>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 mb-1">
               AI-Show 診断
-            </h1>
+          </h1>
             <p className="text-sm sm:text-base md:text-lg text-gray-600 font-medium mb-2">
               〜最も価値観が似ているペアは？〜
             </p>
             <p className="text-sm sm:text-base text-gray-600 px-2">
               {participantName}さんにぴったりのペアが見つかりました！
-            </p>
+          </p>
           </div>
         </div>
 
@@ -263,14 +263,14 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
                 key={match.id}
                 className="bg-white rounded-2xl sm:rounded-3xl shadow-xl sm:shadow-2xl p-4 sm:p-6 md:p-8 hover:shadow-2xl sm:hover:shadow-3xl transition-all"
               >
-                {index === 0 && (
+                        {index === 0 && (
                   <div className="text-center mb-4 sm:mb-6">
                     <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full text-xs sm:text-sm font-bold mb-3 sm:mb-4">
                       <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
                       <span>ペア成立！</span>
                     </div>
-                  </div>
-                )}
+                          </div>
+                        )}
 
                 <div className="flex flex-row items-center justify-center gap-2 sm:gap-4 md:gap-6 lg:gap-8">
                   {/* 自分のプロフィール */}
@@ -283,19 +283,19 @@ export function ResultsPage({ participantId }: ResultsPageProps) {
                             alt={participantName}
                             className="w-full h-full object-cover"
                           />
-                        </div>
-                      ) : (
+                            </div>
+                        ) : (
                         <div className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-lg sm:shadow-xl">
                           <span className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold text-white">
                             {participantName.charAt(0)}
-                          </span>
-                        </div>
-                      )}
+                            </span>
+                          </div>
+                        )}
                       {index === 0 && (
                         <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
                           <Sparkles className="w-4 h-4 sm:w-6 sm:h-6 md:w-8 md:h-8 lg:w-10 lg:h-10 text-amber-500 fill-current animate-pulse" />
                         </div>
-                      )}
+                    )}
                     </div>
                     <p className="mt-1 sm:mt-2 text-xs sm:text-sm md:text-base lg:text-lg font-bold text-gray-800 text-center px-1 sm:px-2 truncate max-w-[80px] sm:max-w-[100px] md:max-w-[120px]">{participantName}</p>
                   </div>

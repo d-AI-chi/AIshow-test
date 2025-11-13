@@ -704,6 +704,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
 
       if (error) throw error;
 
+      // 保存が成功したら、activeEventも更新（fetchEventDetailsを呼ばない）
       setMatchThreshold(normalized);
       setActiveEvent(prev =>
         prev
@@ -720,6 +721,8 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
       }
     } catch (err) {
       console.error('Error saving match threshold:', err);
+      // エラーが発生した場合は、データベースから最新の値を取得
+      await fetchEventDetails(eventId);
       if (showAlert) {
         alert('マッチング閾値の保存に失敗しました。');
       }
@@ -749,7 +752,10 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                 </p>
               </div>
               <button
-                onClick={() => refreshAdminData(eventId)}
+                onClick={async () => {
+                  await refreshAdminData(eventId);
+                  // 閾値は再取得しない（現在の値を保持）
+                }}
                 disabled={isRefreshingData}
                 className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-60 text-sm sm:text-base"
               >

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Heart, Users, Upload, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -20,6 +20,7 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const lastTouchDistanceRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -87,20 +88,57 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
   };
 
   // タッチイベント（携帯対応）
+  const lastTouchDistanceRef = useRef<number | null>(null);
+  
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
-    const touch = e.touches[0];
-    handleStart(touch.clientX, touch.clientY);
+    if (e.touches.length === 1) {
+      // 単一タッチ：ドラッグ
+      const touch = e.touches[0];
+      handleStart(touch.clientX, touch.clientY);
+      lastTouchDistanceRef.current = null;
+    } else if (e.touches.length === 2) {
+      // 2本指：ピンチズーム
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+      lastTouchDistanceRef.current = distance;
+      setIsDragging(false); // ズーム中はドラッグを無効化
+    }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     e.preventDefault();
-    const touch = e.touches[0];
-    handleMove(touch.clientX, touch.clientY);
+    if (e.touches.length === 1 && !lastTouchDistanceRef.current) {
+      // 単一タッチ：ドラッグ
+      const touch = e.touches[0];
+      handleMove(touch.clientX, touch.clientY);
+    } else if (e.touches.length === 2) {
+      // 2本指：ピンチズーム
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+      
+      if (lastTouchDistanceRef.current !== null) {
+        const scaleChange = distance / lastTouchDistanceRef.current;
+        setImageZoom(prev => {
+          const newZoom = prev * scaleChange;
+          return Math.max(0.5, Math.min(3.0, newZoom));
+        });
+      }
+      lastTouchDistanceRef.current = distance;
+    }
   };
 
   const handleTouchEnd = () => {
     handleEnd();
+    lastTouchDistanceRef.current = null;
   };
 
   const handleConfirmImage = async () => {
@@ -290,10 +328,10 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
             </p>
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-800 mb-1">
               AI-Show 診断
-            </h1>
+          </h1>
             <p className="text-sm sm:text-base md:text-lg text-gray-600 font-medium">
               〜最も価値観が似ているペアは？〜
-            </p>
+          </p>
           </div>
         </div>
 
@@ -399,6 +437,10 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
                   <div className="bg-gray-50 rounded-xl p-4">
                     <p className="text-sm text-gray-600 text-center mb-4">
                       ズームと位置を調整して画像の表示範囲を決めてください
+                      <br />
+                      <span className="text-xs text-gray-500">
+                        💡 1本指でドラッグ、2本指でピンチズーム
+                      </span>
                     </p>
                     <div 
                       ref={containerRef}
