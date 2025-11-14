@@ -15,11 +15,12 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [imageZoom, setImageZoom] = useState(1.0);
-  const [imagePosition, setImagePosition] = useState({ x: 0, y: 0 });
+  const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const imageRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const sourceImageRef = useRef<HTMLImageElement | null>(null);
   const lastTouchDistanceRef = useRef<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -38,36 +39,114 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
       setProfileImage(file);
       const url = URL.createObjectURL(file);
       setPreviewUrl(url);
-      setImageZoom(1.0);
-      setImagePosition({ x: 0, y: 0 });
-      setIsEditingImage(true);
+      
+      // 画像を読み込んで編集モードに
+      const img = new Image();
+      img.onload = () => {
+        sourceImageRef.current = img;
+        setImageZoom(1.0);
+        setImageOffset({ x: 0, y: 0 });
+        setIsEditingImage(true);
+        // 初回描画
+        setTimeout(() => drawImageToCanvas(), 100);
+      };
+      img.src = url;
       setError('');
     }
   };
 
+  // Canvasに画像を描画する関数
+  const drawImageToCanvas = () => {
+    const canvas = canvasRef.current;
+    const img = sourceImageRef.current;
+    if (!canvas || !img) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const size = Math.min(300, window.innerWidth * 0.8);
+    canvas.width = size;
+    canvas.height = size;
+
+    // クリア
+    ctx.clearRect(0, 0, size, size);
+
+    // 円形クリッピング
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.clip();
+
+    // 画像のアスペクト比を計算
+    const imageAspect = img.width / img.height;
+    const containerAspect = 1; // 円なので1:1
+
+    // object-fit: cover のロジック
+    let coverWidth: number;
+    let coverHeight: number;
+
+    if (imageAspect > containerAspect) {
+      coverHeight = size;
+      coverWidth = size * imageAspect;
+    } else {
+      coverWidth = size;
+      coverHeight = size / imageAspect;
+    }
+
+    // ズームを適用
+    const scaledWidth = coverWidth * imageZoom;
+    const scaledHeight = coverHeight * imageZoom;
+
+    // 中央位置を計算
+    const centerX = (size - scaledWidth) / 2;
+    const centerY = (size - scaledHeight) / 2;
+
+    // オフセットを適用
+    const finalX = centerX + imageOffset.x;
+    const finalY = centerY + imageOffset.y;
+
+    // 画像を描画
+    ctx.drawImage(img, finalX, finalY, scaledWidth, scaledHeight);
+    ctx.restore();
+  };
+
+  // ズームまたはオフセットが変更されたときに再描画
+  useEffect(() => {
+    if (isEditingImage && sourceImageRef.current) {
+      drawImageToCanvas();
+    }
+  }, [imageZoom, imageOffset, isEditingImage]);
+
+  // ドラッグ開始
   const handleStart = (clientX: number, clientY: number) => {
-    if (!isEditingImage) return;
+    if (!isEditingImage || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
     setIsDragging(true);
     setDragStart({
-      x: clientX - imagePosition.x,
-      y: clientY - imagePosition.y,
+      x: clientX - rect.left - imageOffset.x,
+      y: clientY - rect.top - imageOffset.y,
     });
   };
 
+  // ドラッグ中
   const handleMove = (clientX: number, clientY: number) => {
     if (!isDragging || !isEditingImage || !containerRef.current) return;
-    const containerSize = containerRef.current.offsetWidth;
-    const maxOffset = containerSize * 0.5; // コンテナサイズに応じて調整
+    const rect = containerRef.current.getBoundingClientRect();
+    const containerSize = rect.width;
+    
+    // ズームが大きいほど移動範囲を広げる
+    const maxOffset = (containerSize * 0.5) * imageZoom;
 
-    const newX = clientX - dragStart.x;
-    const newY = clientY - dragStart.y;
+    const newX = (clientX - rect.left) - dragStart.x;
+    const newY = (clientY - rect.top) - dragStart.y;
 
-    setImagePosition({
+    setImageOffset({
       x: Math.max(-maxOffset, Math.min(maxOffset, newX)),
       y: Math.max(-maxOffset, Math.min(maxOffset, newY)),
     });
   };
 
+  // ドラッグ終了
   const handleEnd = () => {
     setIsDragging(false);
   };
@@ -79,8 +158,10 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    e.preventDefault();
-    handleMove(e.clientX, e.clientY);
+    if (isDragging) {
+      e.preventDefault();
+      handleMove(e.clientX, e.clientY);
+    }
   };
 
   const handleMouseUp = () => {
@@ -88,17 +169,13 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
   };
 
   // タッチイベント（携帯対応）
-  const lastTouchDistanceRef = useRef<number | null>(null);
-  
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
     if (e.touches.length === 1) {
-      // 単一タッチ：ドラッグ
       const touch = e.touches[0];
       handleStart(touch.clientX, touch.clientY);
       lastTouchDistanceRef.current = null;
     } else if (e.touches.length === 2) {
-      // 2本指：ピンチズーム
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
       const distance = Math.hypot(
@@ -106,18 +183,16 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
         touch2.clientY - touch1.clientY
       );
       lastTouchDistanceRef.current = distance;
-      setIsDragging(false); // ズーム中はドラッグを無効化
+      setIsDragging(false);
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
     e.preventDefault();
     if (e.touches.length === 1 && !lastTouchDistanceRef.current) {
-      // 単一タッチ：ドラッグ
       const touch = e.touches[0];
       handleMove(touch.clientX, touch.clientY);
     } else if (e.touches.length === 2) {
-      // 2本指：ピンチズーム
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
       const distance = Math.hypot(
@@ -141,56 +216,74 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
     lastTouchDistanceRef.current = null;
   };
 
-  const handleConfirmImage = async () => {
-    if (!profileImage || !previewUrl) return;
+  // 決定ボタン: canvasから直接画像を取得
+  const handleConfirmImage = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !profileImage) return;
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    // 高解像度のcanvasを作成（400x400）
+    const outputCanvas = document.createElement('canvas');
+    const outputCtx = outputCanvas.getContext('2d');
+    if (!outputCtx) return;
 
-    const size = 400;
-    canvas.width = size;
-    canvas.height = size;
+    const outputSize = 400;
+    outputCanvas.width = outputSize;
+    outputCanvas.height = outputSize;
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-      ctx.clip();
+    // 表示canvasの内容を高解像度canvasに拡大描画
+    outputCtx.save();
+    outputCtx.beginPath();
+    outputCtx.arc(outputSize / 2, outputSize / 2, outputSize / 2, 0, Math.PI * 2);
+    outputCtx.clip();
 
-      // ズームを適用したスケール計算
-      const baseScale = Math.max(img.width / size, img.height / size);
-      const finalScale = baseScale / imageZoom;
-      const scaledWidth = img.width / finalScale;
-      const scaledHeight = img.height / finalScale;
-
-      // 位置調整を適用（調整画面のサイズ300pxと実際のサイズ400pxの比率を考慮）
-      const displaySize = 300;
-      const scaleRatio = size / displaySize; // 400 / 300 = 1.33
+    // 元の画像を高解像度で再描画
+    const img = sourceImageRef.current;
+    if (img) {
+      const imageAspect = img.width / img.height;
+      const containerAspect = 1;
       
-      // 中央に配置し、位置調整を適用
-      const offsetX = (size - scaledWidth) / 2 + imagePosition.x * scaleRatio;
-      const offsetY = (size - scaledHeight) / 2 + imagePosition.y * scaleRatio;
+      let coverWidth: number;
+      let coverHeight: number;
+      
+      if (imageAspect > containerAspect) {
+        coverHeight = outputSize;
+        coverWidth = outputSize * imageAspect;
+      } else {
+        coverWidth = outputSize;
+        coverHeight = outputSize / imageAspect;
+      }
+      
+      const scaledWidth = coverWidth * imageZoom;
+      const scaledHeight = coverHeight * imageZoom;
+      
+      const centerX = (outputSize - scaledWidth) / 2;
+      const centerY = (outputSize - scaledHeight) / 2;
+      
+      // 表示サイズから出力サイズへの変換比率
+      const displaySize = canvas.width;
+      const ratio = outputSize / displaySize;
+      
+      const finalX = centerX + (imageOffset.x * ratio);
+      const finalY = centerY + (imageOffset.y * ratio);
 
-      ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
-      ctx.restore();
+      outputCtx.drawImage(img, finalX, finalY, scaledWidth, scaledHeight);
+    }
+    
+    outputCtx.restore();
 
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const file = new File([blob], profileImage.name, { type: 'image/png' });
-          setProfileImage(file);
-          const newUrl = URL.createObjectURL(blob);
-          if (previewUrl) URL.revokeObjectURL(previewUrl);
-          setPreviewUrl(newUrl);
-          setIsEditingImage(false);
-          setImageZoom(1.0);
-          setImagePosition({ x: 0, y: 0 });
-        }
-      }, 'image/png', 0.95);
-    };
-    img.src = previewUrl;
+    // Blobに変換して保存
+    outputCanvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], profileImage.name, { type: 'image/png' });
+        setProfileImage(file);
+        const newUrl = URL.createObjectURL(blob);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(newUrl);
+        setIsEditingImage(false);
+        setImageZoom(1.0);
+        setImageOffset({ x: 0, y: 0 });
+      }
+    }, 'image/png', 0.95);
   };
 
   const handleRemoveImage = () => {
@@ -454,20 +547,12 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
                       onTouchMove={handleTouchMove}
                       onTouchEnd={handleTouchEnd}
                     >
-                      <div className="absolute inset-0 rounded-full overflow-hidden border-4 border-rose-500 shadow-inner">
-                        <img
-                          ref={imageRef}
-                          src={previewUrl}
-                          alt="プロフィール画像"
-                          className="w-full h-full object-cover select-none pointer-events-none"
-                          style={{
-                            transform: `scale(${imageZoom}) translate(${imagePosition.x}px, ${imagePosition.y}px)`,
-                            transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-                            transformOrigin: 'center center',
-                          }}
-                          draggable={false}
-                        />
-                      </div>
+                      <canvas
+                        ref={canvasRef}
+                        className="w-full h-full rounded-full"
+                        style={{ display: 'block' }}
+                      />
+                      <div className="absolute inset-0 pointer-events-none rounded-full border-4 border-rose-500 shadow-inner" />
                     </div>
                     <div className="mt-6 px-4">
                       <label className="block text-sm font-medium text-gray-700 mb-3 text-center">
@@ -509,6 +594,7 @@ export function LandingPage({ onJoinEvent, onOpenAdmin }: LandingPageProps) {
                       onClick={() => {
                         setIsEditingImage(false);
                         setImageZoom(1.0);
+                        setImageOffset({ x: 0, y: 0 });
                       }}
                       className="px-6 py-3 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg font-medium transition-colors"
                     >

@@ -80,6 +80,7 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
     optionCounts: Array<{ optionIndex: number; optionText: string; count: number }>;
     totalAnswers: number;
   }>>([]);
+  const [localIPAddress, setLocalIPAddress] = useState<string>('');
 
   useEffect(() => {
     if (!eventId) return;
@@ -91,6 +92,84 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
     const interval = setInterval(() => loadEventStats(eventId), 5000);
       return () => clearInterval(interval);
   }, [eventId]);
+
+  // IPアドレスを取得（開発環境用）
+  useEffect(() => {
+    // localhostの場合のみIPアドレスを取得
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return;
+    }
+
+    const getLocalIP = async () => {
+      let found = false;
+      let pc: RTCPeerConnection | null = null;
+      
+      try {
+        // RTCPeerConnectionが利用可能か確認
+        if (typeof RTCPeerConnection === 'undefined') {
+          setLocalIPAddress('取得できませんでした');
+          return;
+        }
+
+        // WebRTC APIを使ってローカルIPアドレスを取得
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        
+        pc.createDataChannel('');
+        
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        
+        pc.onicecandidate = (event) => {
+          if (event.candidate && !found && pc) {
+            try {
+              const candidate = event.candidate.candidate;
+              const match = candidate.match(/([0-9]{1,3}\.){3}[0-9]{1,3}/);
+              if (match && match[0] && !match[0].startsWith('127.')) {
+                found = true;
+                setLocalIPAddress(match[0]);
+                if (pc) {
+                  pc.close();
+                  pc = null;
+                }
+              }
+            } catch (err) {
+              // エラーを無視して続行
+            }
+          }
+        };
+        
+        // タイムアウト処理
+        setTimeout(() => {
+          if (!found) {
+            if (pc) {
+              try {
+                pc.close();
+              } catch (err) {
+                // エラーを無視
+              }
+              pc = null;
+            }
+            setLocalIPAddress('取得できませんでした');
+          }
+        }, 3000);
+      } catch (err) {
+        // エラーをコンソールに出力するが、アプリをクラッシュさせない
+        console.warn('IP address detection failed:', err);
+        if (pc) {
+          try {
+            pc.close();
+          } catch (closeErr) {
+            // エラーを無視
+          }
+        }
+        setLocalIPAddress('取得できませんでした');
+      }
+    };
+
+    getLocalIP();
+  }, []);
 
   const fetchEventDetails = async (targetEventId: string, skipThresholdUpdate = false) => {
     const { data, error } = await supabase
@@ -789,12 +868,14 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                     参加者用リンク
                   </label>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/`}
-                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-mono text-gray-800"
-                    />
+                    <a
+                      href={`${window.location.origin}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-mono text-blue-600 hover:text-blue-800 hover:bg-blue-50 break-all"
+                    >
+                      {`${window.location.origin}/`}
+                    </a>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(`${window.location.origin}/`);
@@ -812,12 +893,14 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                     管理者用リンク
                   </label>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={`${window.location.origin}/admin`}
-                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-mono text-gray-800"
-                    />
+                    <a
+                      href={`${window.location.origin}/admin`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-mono text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 break-all"
+                    >
+                      {`${window.location.origin}/admin`}
+                    </a>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(`${window.location.origin}/admin`);
@@ -835,12 +918,20 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                     大画面モニター用リンク
                   </label>
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={eventId ? `${window.location.origin}/display/${eventId}` : 'イベントを選択してください'}
-                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-mono text-gray-800"
-                    />
+                    {eventId ? (
+                      <a
+                        href={`${window.location.origin}/display/${eventId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs sm:text-sm font-mono text-purple-600 hover:text-purple-800 hover:bg-purple-50 break-all"
+                      >
+                        {`${window.location.origin}/display/${eventId}`}
+                      </a>
+                    ) : (
+                      <div className="flex-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-xs sm:text-sm text-gray-500">
+                        イベントを選択してください
+                      </div>
+                    )}
                     <button
                       onClick={() => {
                         if (eventId) {
@@ -862,10 +953,6 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                 <div className="mt-3 pt-3 border-t border-blue-200">
                   <p className="text-xs text-gray-600">
                     💡 <strong>注意:</strong> 携帯からアクセスするには、PCと携帯が同じWi-Fiネットワークに接続されている必要があります。
-                    <br />
-                    <span className="text-gray-500">
-                      PCのIPアドレスが {window.location.hostname} の場合、携帯のブラウザで上記のリンクにアクセスしてください。
-                    </span>
                   </p>
                 </div>
               </div>
@@ -929,10 +1016,23 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                       onChange={e => {
                         const value = Number(e.target.value);
                         setMatchThreshold(value);
-                        // スライダーを動かしたら自動保存（alertは表示しない）
-                        setTimeout(() => {
-                          saveMatchThreshold(false);
-                        }, 300); // 300ms後に自動保存（連続変更を防ぐ）
+                        // 即座にactiveEventも更新（アニメーションを遅らせない）
+                        setActiveEvent(prev =>
+                          prev
+                            ? {
+                                ...prev,
+                                match_threshold: value,
+                              }
+                            : prev,
+                        );
+                      }}
+                      onMouseUp={() => {
+                        // マウスを離したときに保存
+                        saveMatchThreshold(false);
+                      }}
+                      onTouchEnd={() => {
+                        // タッチを離したときに保存
+                        saveMatchThreshold(false);
                       }}
                       className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500"
                       style={{
@@ -992,33 +1092,6 @@ const [newQuestions, setNewQuestions] = useState<Question[]>([
                     <p className="text-xs text-gray-500 mt-2">
                       💡 スライダーを動かすと自動保存されます。直接入力の場合はEnterキーまたは保存ボタンで保存できます。
                     </p>
-                  </div>
-
-                  {/* クイック設定ボタン */}
-                  <div className="border-t border-gray-200 pt-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      よく使う設定
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {[70, 75, 80, 85, 90, 95, 100].map(value => (
-                        <button
-                          key={value}
-                          onClick={() => {
-                            setMatchThreshold(value);
-                            setTimeout(() => {
-                              saveMatchThreshold(false); // クイック設定でもalertは表示しない
-                            }, 100);
-                          }}
-                          className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                            matchThreshold === value
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          {value}%
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </div>

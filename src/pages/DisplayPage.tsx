@@ -10,6 +10,7 @@ interface MatchPair {
   matchedParticipantName: string;
   matchedParticipantImage: string | null;
   score: number;
+  isTopScore?: boolean; // 最高スコアのペアかどうか
 }
 
 interface DisplayPageProps {
@@ -23,6 +24,12 @@ interface AnswerNotification {
   timestamp: number;
 }
 
+interface ParticipantSlide {
+  id: string;
+  name: string;
+  profileImage: string | null;
+}
+
 export function DisplayPage({ eventId }: DisplayPageProps) {
   const [matchPairs, setMatchPairs] = useState<MatchPair[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -31,6 +38,9 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
   const [notifications, setNotifications] = useState<AnswerNotification[]>([]);
   const processedAnswerIdsRef = useRef<Set<string>>(new Set());
   const notifiedParticipantsRef = useRef<Set<string>>(new Set());
+  const [participants, setParticipants] = useState<ParticipantSlide[]>([]); // スライドショー用の参加者リスト
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0); // 現在のスライドインデックス
+  const [prevSlideIndex, setPrevSlideIndex] = useState<number | null>(null); // 前のスライドインデックス
 
   const checkForNewAnswers = async () => {
     try {
@@ -90,8 +100,8 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
     loadInitialAnswers();
     checkForNewAnswers();
 
-    // 定期的に更新（5秒ごと）
-    const interval = setInterval(loadDisplayData, 5000);
+    // 定期的に更新（3秒ごと）- より頻繁に更新してリアルタイム性を向上
+    const interval = setInterval(loadDisplayData, 3000);
     // 回答状況を定期的にチェック（2秒ごと）
     const answerCheckInterval = setInterval(checkForNewAnswers, 2000);
 
@@ -117,7 +127,9 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
           table: 'events',
           filter: `id=eq.${eventId}`,
         },
-        () => {
+        (payload) => {
+          console.log('Event updated:', payload);
+          // match_thresholdが変更された場合も含めて、常に再読み込み
           loadDisplayData();
         }
       )
@@ -193,6 +205,20 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
     };
   }, [eventId]);
 
+  // スライドショーの自動切り替え
+  useEffect(() => {
+    if (participants.length === 0) return;
+
+    const interval = setInterval(() => {
+      setCurrentSlideIndex((prev) => {
+        setPrevSlideIndex(prev); // 前のスライドインデックスを保存
+        return (prev + 1) % participants.length;
+      });
+    }, 3000); // 3秒ごとに切り替え
+
+    return () => clearInterval(interval);
+  }, [participants]);
+
   const loadInitialAnswers = async () => {
     // 既存の回答IDを取得して、重複通知を防ぐ
     const { data: answers } = await supabase
@@ -238,9 +264,28 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
       if (!event) return;
 
       setEventName(event.name || '');
-      setMatchThreshold(event.match_threshold ? Number(event.match_threshold) : 85);
+      
+      // 最新のマッチング閾値を取得（stateではなく、イベントから直接取得）
+      const currentThreshold = event.match_threshold ? Number(event.match_threshold) : 85;
+      setMatchThreshold(currentThreshold);
 
-      // 結果が公開されていない場合は何も表示しない
+      // 参加者一覧を取得してスライドショー用に設定
+      const { data: allParticipants, error: participantsError } = await supabase
+        .from('participants')
+        .select('id, name, profile_image_url')
+        .eq('event_id', eventId)
+        .order('created_at', { ascending: true });
+
+      if (!participantsError && allParticipants) {
+        const slides: ParticipantSlide[] = allParticipants.map(p => ({
+          id: p.id,
+          name: p.name,
+          profileImage: p.profile_image_url,
+        }));
+        setParticipants(slides);
+      }
+
+      // 結果が公開されていない場合はスライドショーのみ表示
       if (!event.results_visible) {
         setMatchPairs([]);
         setIsLoading(false);
@@ -272,7 +317,7 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
 
       if (matchError) throw matchError;
 
-      // フィルタリングとフォーマット
+      // フィルタリングとフォーマット（ResultsPageと同じロジック）
       const formattedPairs: MatchPair[] = [];
       const processedPairs = new Set<string>();
 
@@ -280,12 +325,24 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
         const participant = (result as any).participant;
         const matchedParticipant = (result as any).matched_participant;
 
+        // 必須チェック
         if (!participant || !matchedParticipant) continue;
+        
+        // 同じ人同士のペアを除外
+        if (participant.id === matchedParticipant.id) continue;
+        
+        // 非表示ペアを除外
         if ((result as any).is_hidden === true) continue;
-        if (Number((result as any).compatibility_score) < matchThreshold) continue;
+        
+        // 閾値未満のペアを除外（最新の閾値を使用）
+        const score = Number((result as any).compatibility_score);
+        if (isNaN(score) || score < currentThreshold) continue;
 
         // 重複を防ぐ（p1-p2とp2-p1は同じペア）
-        const pairKey = [participant.id, matchedParticipant.id].sort().join('-');
+        // IDをソートして一意のキーを生成
+        const pairKey = [participant.id, matchedParticipant.id]
+          .sort()
+          .join('-');
         if (processedPairs.has(pairKey)) continue;
         processedPairs.add(pairKey);
 
@@ -296,14 +353,23 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
           matchedParticipantId: matchedParticipant.id,
           matchedParticipantName: matchedParticipant.name,
           matchedParticipantImage: matchedParticipant.profile_image_url,
-          score: Number((result as any).compatibility_score),
+          score: score, // 数値変換済みのスコアを使用
         });
       }
 
       // スコア順にソート
       formattedPairs.sort((a, b) => b.score - a.score);
 
-      setMatchPairs(formattedPairs);
+      // 最高スコアを計算（同率1位を判定するため）
+      const maxScore = formattedPairs.length > 0 ? formattedPairs[0].score : 0;
+
+      // 最高スコアのフラグを追加
+      const pairsWithTopScore = formattedPairs.map(pair => ({
+        ...pair,
+        isTopScore: pair.score === maxScore,
+      }));
+
+      setMatchPairs(pairsWithTopScore);
     } catch (err: any) {
       console.error('Error loading display data:', err);
     } finally {
@@ -401,33 +467,146 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
 
         {/* マッチング結果 */}
         {matchPairs.length === 0 ? (
-          <div className="bg-white rounded-3xl shadow-2xl p-12 text-center">
-            <p className="text-2xl text-gray-600">
-              まだ結果が公開されていません
-            </p>
+          <div className="bg-white rounded-3xl shadow-2xl p-8 lg:p-12">
+            <div className="text-center mb-8">
+              <p className="text-xl lg:text-2xl font-bold text-gray-800 mb-2">
+                参加者のみなさん
+              </p>
+              <p className="text-base lg:text-lg text-gray-600">
+                結果は準備中です
+              </p>
+            </div>
+            {/* 参加者のプロフィール画像をスライドショー形式で表示 */}
+            {participants.length > 0 && (
+              <div className="relative w-full max-w-3xl mx-auto overflow-hidden" style={{ height: 'min(400px, 90vw, 70vh)' }}>
+                {/* 右から左へ流れるスライドショー */}
+                <div className="relative w-full h-full">
+                  {participants.map((participant, index) => {
+                    const isActive = index === currentSlideIndex;
+                    const isPrev = index === prevSlideIndex;
+                    
+                    // アクティブなスライドと前のスライドのみ表示
+                    if (!isActive && !isPrev) {
+                      return null;
+                    }
+                    
+                    // 前のスライドは左に流れていくアニメーション
+                    if (isPrev && !isActive) {
+                      return (
+                        <div
+                          key={`${participant.id}-prev-${prevSlideIndex}`}
+                          className="absolute inset-0 flex flex-col items-center justify-center z-0"
+                          style={{
+                            animation: 'slideOutToLeft 1s ease-in forwards',
+                          }}
+                          onAnimationEnd={() => {
+                            // アニメーション終了後に前のスライドをクリア
+                            if (prevSlideIndex !== null && prevSlideIndex === index) {
+                              setPrevSlideIndex(null);
+                            }
+                          }}
+                        >
+                          <div className="aspect-square rounded-full overflow-hidden border-4 border-rose-500 shadow-2xl mb-4 sm:mb-6" style={{ width: 'min(300px, 80vw)' }}>
+                            {participant.profileImage ? (
+                              <img
+                                src={participant.profileImage}
+                                alt={participant.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center">
+                                <span className="text-6xl sm:text-7xl lg:text-9xl font-bold text-white">
+                                  {participant.name.charAt(0)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-lg sm:text-xl lg:text-3xl font-bold text-gray-800 text-center px-2">
+                            {participant.name}
+                          </p>
+                        </div>
+                      );
+                    }
+                    
+                    // アクティブなスライドは右から入ってくるアニメーション
+                    return (
+                      <div
+                        key={`${participant.id}-${currentSlideIndex}`}
+                        className="absolute inset-0 flex flex-col items-center justify-center z-10"
+                        style={{
+                          animation: 'slideInFromRight 1s ease-out forwards, float 3s ease-in-out 1s infinite',
+                        }}
+                      >
+                        <div className="aspect-square rounded-full overflow-hidden border-4 border-rose-500 shadow-2xl mb-4 sm:mb-6" style={{ width: 'min(300px, 80vw)' }}>
+                          {participant.profileImage ? (
+                            <img
+                              src={participant.profileImage}
+                              alt={participant.name}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-rose-400 to-pink-500 flex items-center justify-center">
+                              <span className="text-6xl sm:text-7xl lg:text-9xl font-bold text-white">
+                                {participant.name.charAt(0)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-lg sm:text-xl lg:text-3xl font-bold text-gray-800 text-center px-2">
+                          {participant.name}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* インジケーター */}
+                <div className="mt-4 sm:mt-8 text-center relative z-20">
+                  <div className="mt-2 sm:mt-4 flex justify-center gap-2">
+                    {participants.map((_, index) => (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          setPrevSlideIndex(currentSlideIndex);
+                          setCurrentSlideIndex(index);
+                        }}
+                        className={`h-2 rounded-full transition-all ${
+                          index === currentSlideIndex
+                            ? 'bg-rose-500 w-8'
+                            : 'bg-gray-300 hover:bg-gray-400 w-2'
+                        }`}
+                        aria-label={`スライド ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+                  <p className="mt-2 sm:mt-3 text-sm sm:text-base lg:text-lg text-gray-500">
+                    {currentSlideIndex + 1} / {participants.length}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="flex flex-col items-center gap-6 lg:gap-8 max-w-4xl mx-auto">
             {matchPairs.map((pair, index) => (
               <div
                 key={`${pair.participantId}-${pair.matchedParticipantId}`}
-                className="bg-white rounded-3xl shadow-2xl p-8 hover:shadow-3xl transition-all transform hover:scale-[1.02]"
+                className="bg-white rounded-3xl shadow-2xl p-6 lg:p-8 hover:shadow-3xl transition-all transform hover:scale-[1.02] flex flex-col w-full"
               >
-                {index === 0 && (
-                  <div className="text-center mb-6">
-                    <div className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-rose-500 to-pink-500 text-white rounded-full text-lg font-bold mb-4">
-                      <Sparkles className="w-6 h-6" />
-                      <span>最高の相性！</span>
+                {pair.isTopScore && (
+                  <div className="text-center mb-4 lg:mb-5">
+                    <div className="inline-flex items-center gap-2 px-4 lg:px-5 py-2 lg:py-2.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-full text-sm lg:text-base font-bold shadow-lg animate-pulse">
+                      <Trophy className="w-4 h-4 lg:w-5 lg:h-5 fill-current" />
+                      <span>最高のペアです！</span>
                     </div>
                   </div>
                 )}
 
-                <div className="flex flex-col items-center gap-6">
+                <div className="flex flex-row items-center justify-center gap-3 sm:gap-4 md:gap-5 lg:gap-6 flex-1">
                   {/* 参加者1 */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center flex-shrink-0">
                     <div className="relative">
                       {pair.participantImage ? (
-                        <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-xl">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-xl">
                           <img
                             src={pair.participantImage}
                             alt={pair.participantName}
@@ -435,39 +614,39 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
                           />
                         </div>
                       ) : (
-                        <div className="w-32 h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-xl">
-                          <span className="text-6xl font-bold text-white">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-xl">
+                          <span className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white">
                             {pair.participantName.charAt(0)}
                           </span>
                         </div>
                       )}
-                      {index === 0 && (
-                        <div className="absolute -top-2 -right-2">
-                          <Sparkles className="w-12 h-12 text-amber-500 fill-current animate-pulse" />
+                      {pair.isTopScore && (
+                        <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
+                          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 lg:w-10 lg:h-10 text-amber-500 fill-current animate-pulse" />
                         </div>
                       )}
                     </div>
-                    <p className="mt-4 text-xl font-bold text-gray-800">{pair.participantName}</p>
+                    <p className="mt-2 sm:mt-3 text-sm sm:text-base md:text-lg lg:text-xl font-bold text-gray-800 text-center truncate max-w-[100px] sm:max-w-[120px] md:max-w-[140px] px-1">{pair.participantName}</p>
                   </div>
 
                   {/* ハートアイコン */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center flex-shrink-0">
                     <div className="relative">
-                      <Heart className="w-20 h-20 text-rose-500 fill-current animate-pulse" />
+                      <Heart className="w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 lg:w-28 lg:h-28 text-rose-500 fill-current animate-pulse" />
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-3xl font-bold text-white drop-shadow-lg">
+                        <span className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold text-white drop-shadow-lg">
                           {Math.round(pair.score)}%
                         </span>
                       </div>
                     </div>
-                    <p className="mt-2 text-base text-gray-600 font-medium">相性度</p>
+                    <p className="mt-1 sm:mt-2 text-xs sm:text-sm md:text-base text-gray-600 font-medium whitespace-nowrap">相性度</p>
                   </div>
 
                   {/* 参加者2 */}
-                  <div className="flex flex-col items-center">
+                  <div className="flex flex-col items-center flex-shrink-0">
                     <div className="relative">
                       {pair.matchedParticipantImage ? (
-                        <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-xl">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 rounded-full overflow-hidden border-4 border-rose-500 shadow-xl">
                           <img
                             src={pair.matchedParticipantImage}
                             alt={pair.matchedParticipantName}
@@ -475,25 +654,25 @@ export function DisplayPage({ eventId }: DisplayPageProps) {
                           />
                         </div>
                       ) : (
-                        <div className="w-32 h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-xl">
-                          <span className="text-6xl font-bold text-white">
+                        <div className="w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center border-4 border-rose-500 shadow-xl">
+                          <span className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white">
                             {pair.matchedParticipantName.charAt(0)}
                           </span>
                         </div>
                       )}
-                      {index === 0 && (
-                        <div className="absolute -top-2 -right-2">
-                          <Sparkles className="w-12 h-12 text-amber-500 fill-current animate-pulse" />
+                      {pair.isTopScore && (
+                        <div className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2">
+                          <Sparkles className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 lg:w-10 lg:h-10 text-amber-500 fill-current animate-pulse" />
                         </div>
                       )}
                     </div>
-                    <p className="mt-4 text-xl font-bold text-gray-800">{pair.matchedParticipantName}</p>
+                    <p className="mt-2 sm:mt-3 text-sm sm:text-base md:text-lg lg:text-xl font-bold text-gray-800 text-center truncate max-w-[100px] sm:max-w-[120px] md:max-w-[140px] px-1">{pair.matchedParticipantName}</p>
                   </div>
                 </div>
 
-                {index === 0 && (
-                  <div className="mt-6 pt-6 border-t border-gray-200 text-center">
-                    <p className="text-xl font-semibold text-rose-600 mb-2">
+                {pair.isTopScore && (
+                  <div className="mt-4 lg:mt-5 pt-4 lg:pt-5 border-t border-gray-200 text-center">
+                    <p className="text-sm sm:text-base md:text-lg lg:text-xl font-semibold text-amber-600">
                       🎉 最高の相性です！ 🎉
                     </p>
                   </div>
